@@ -6,3 +6,26 @@ Screen {
     height: 1fr;
     border: solid green;
 }
+
+.input {
+  width: 2fr;
+  border: solid green;
+}
+
+.button {
+  width: 1fr;
+  background: green 20%;
+  border: solid yellow;
+}
+
+.vspacer {
+  height: 1fr;
+  width: 100%;
+}
+
+.log {
+  height: 3;
+  width: 100%;
+  background: green 30%;
+  color: yellow;
+}
