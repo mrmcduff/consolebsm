@@ -23,6 +23,13 @@ Screen {
   width: 100%;
 }
 
+.keylog {
+  height: 2;
+  width: 100%;
+  background: yellow 30%;
+  color: purple;
+}
+
 .log {
   height: 3;
   width: 100%;
