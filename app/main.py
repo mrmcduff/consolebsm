@@ -37,11 +37,6 @@ class ConsoleBSM(App):
         logout = self.query_one("#log", Log)
         logout.write_line(f"Input submitted with {event.value}")
 
-    def on_key(self, event: events.Key ) -> None:
-        logout = self.query_one("#keylog", Log)
-        logout.write(event.character)
-
-
     def action_toggle_dark(self) -> None:
         """An action to toggle dark mode."""
         self.dark = not self.dark
