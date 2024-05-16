@@ -1,4 +1,5 @@
 from app.utils import date_tools as dt
+from datetime import datetime
 
 def test_ymd_valid():
   response = dt.parse_date("2021-03-14")
@@ -57,3 +58,7 @@ def test_mby_padded_valid():
   assert response["date"].month == 2
   assert response["date"].day == 4
   assert response["valid"] is True
+
+def test_output_date():
+  output = dt.format_date(datetime.strptime('01/02/2023', '%m/%d/%Y'))
+  assert output == '2023-01-02'
