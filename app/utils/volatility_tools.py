@@ -1,4 +1,4 @@
-from typing import List, Dict, Union
+from typing import List, Dict
 import math
 
 TRADE_DAYS_PER_YEAR = 252
