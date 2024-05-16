@@ -2,8 +2,22 @@ Screen {
     layout: vertical;
 }
 
+Grid {
+  grid-size: 4 5;
+}
+
+#ticker {
+  column-span: 2;
+}
+
+#user-output {
+  row-span: 3;
+  column-span: 4;
+}
+
 .box {
-    height: 1fr;
+    height: 100%;
+    width: 100%;
     border: solid green;
 }
 
@@ -16,6 +30,12 @@ Screen {
   width: 1fr;
   background: green 20%;
   border: solid yellow;
+}
+InputStack {
+  layout: vertical;
+  height: auto;
+  width: 1fr;
+  background: yellow 50%;
 }
 
 .vspacer {
@@ -30,8 +50,14 @@ Screen {
   color: purple;
 }
 
+.testing {
+  width: 1fr;
+  height: 10;
+  background: red 40%;
+}
+
 .log {
-  height: 3;
+  height: 4;
   width: 100%;
   background: green 30%;
   color: yellow;
