@@ -27,6 +27,10 @@ def validate_key(items: List[Dict], key: str) -> bool:
 def calculate_tau(items: List) -> float:
   return len(items) / TRADE_DAYS_PER_YEAR
 
+def get_const_tau() -> float:
+  # assumes that the interval of the sample is daily.
+  return 1/TRADE_DAYS_PER_YEAR
+
 def calculate_volatility(vals: List[float]) -> tuple[float, float]:
   count = len(vals)
   uis = get_uis(vals)
@@ -35,7 +39,7 @@ def calculate_volatility(vals: List[float]) -> tuple[float, float]:
   first_term = (1/(count - 1)) * uis_squared
   second_term = (1/(count*(count - 1)))* sum_uis_squared
   s = math.sqrt(first_term - second_term)
-  tau = calculate_tau(vals)
+  tau = get_const_tau()
   sigma_hat = s / math.sqrt(tau)
   error = sigma_hat / math.sqrt(2*count)
   return sigma_hat, error

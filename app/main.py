@@ -1,15 +1,18 @@
 import asyncio
 import httpx
 import os
+from typing import Any
 from textual import on
 from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.containers import Grid, Horizontal
 from textual.widgets import Button, Footer, Header, Input, Log, RichLog, Static, Digits, Label
-from utils.date_tools import default_date_str, parse_date, format_date, find_start_date_str
+from utils.date_tools import default_date_str, parse_date, format_date, find_start_date_str, from_millis
 from dotenv import load_dotenv
 from rich import json
 from components.CounterButton import CounterButton
+from utils.format_tools import get_closes
+from utils.volatility_tools import calculate_volatility, calculate_daily_volatility
 
 load_dotenv()
 polygon_key = os.getenv('POLYGON_IO_API_KEY')
@@ -104,15 +107,29 @@ class ConsoleBSM(App):
     days_back = self.span_count
     start_date_str = find_start_date_str(end_date_str=end_date_str, days_back=days_back)
 
-    formatted_json = await self.make_range_call(ticker=ticker, start_date_str=start_date_str, end_date_str=end_date_str)
+    unformatted_json = await self.make_range_call(ticker=ticker, start_date_str=start_date_str, end_date_str=end_date_str)
+    formatted_json = json.JSON.from_data(unformatted_json)
     if formatted_json is None:
       self.log_out('Something failed')
     else:
-      self.log_json(formatted_json)
+      #self.log_json(formatted_json)
+      self.log_out('Calculating...')
+      closes = get_closes(unformatted_json['results'])
+      dates = [*map(lambda uj: format_date(from_millis(uj['t'])), unformatted_json['results'])]
+      [sigma_hat_c, error_c] = calculate_volatility(closes)
+      [sigma_hat_h, error_h] = calculate_daily_volatility(unformatted_json['results'], key='h')
+      self.log_out(f"Data for {ticker.upper()}")
+      self.log_out(f"Volatility for {len(closes)}-day period ending {end_date_str} is {sigma_hat_c}")
+      self.log_out(f"Volatility of highs for {len(closes)}-day period ending {end_date_str} is {sigma_hat_h}")
+      self.log_out(f"Error for range is {error_c}")
+      self.log_out(f"Error for high range is {error_h}")
+      self.log_json(str(closes))
+      self.log_json(str(dates))
+
     self.log_out('waking up')
     self.set_ohlc_disabled(False)
 
-  async def make_range_call(self, ticker: str, start_date_str: str, end_date_str: str) -> json.JSON | None:
+  async def make_range_call(self, ticker: str, start_date_str: str, end_date_str: str) -> Any | None:
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker.upper()}/range/1/day/{start_date_str}/{end_date_str}?adjusted=true&sort=asc"
     headers = {
       "Authorization": f"Bearer {polygon_key}"
@@ -122,9 +139,7 @@ class ConsoleBSM(App):
       try:
         response = await client.get(url, headers=headers)
         response.raise_for_status()  # Raise an exception for HTTP errors
-        self.log_out('Managed to get a positive response from the server')
-        formatted = json.JSON.from_data(response.json())
-        return formatted
+        return response.json()
       except httpx.RequestError as exc:
         self.log_out(f"An error occurred while requesting {exc.request.url!r}.")
       except httpx.HTTPStatusError as exc:
@@ -132,7 +147,7 @@ class ConsoleBSM(App):
       except Exception as exc:
         self.log_out(f"An unexpected error occurred: {exc}")
 
-  async def make_api_call(self, ticker: str, datestr: str) -> json.JSON | None:
+  async def make_api_call(self, ticker: str, datestr: str) -> Any | None:
     url = f"https://api.polygon.io/v1/open-close/{ticker.upper()}/{datestr}?adjusted=true"
     headers = {
       "Authorization": f"Bearer {polygon_key}"

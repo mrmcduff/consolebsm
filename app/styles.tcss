@@ -10,6 +10,10 @@ Grid {
   column-span: 2;
 }
 
+.onerow {
+  row-span: 1;
+}
+
 .centertext {
   text-align: center;
   content-align-vertical: middle;
