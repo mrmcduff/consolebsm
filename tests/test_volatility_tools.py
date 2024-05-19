@@ -1,8 +1,7 @@
 from app.utils import volatility_tools as vt
+from tests.test_tools import within_epsilon
 import pytest
 import math
-
-EPSILON = 0.0001
 
 
 def setup_known_values():
@@ -59,10 +58,6 @@ def setup_known_values():
         "tau": tau,
         "err": err,
     }
-
-
-def within_epsilon(actual: float, expected: float) -> bool:
-    return abs(actual - expected) < EPSILON
 
 
 def test_sum_squares():
