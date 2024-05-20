@@ -1,6 +1,6 @@
 import httpx
 import os
-from typing import Any
+from typing import Any, Tuple
 from textual import on
 from textual.app import App, ComposeResult
 from textual.reactive import reactive
@@ -21,6 +21,7 @@ from utils.volatility_tools import calculate_volatility, calculate_daily_volatil
 load_dotenv()
 polygon_key = os.getenv("POLYGON_IO_API_KEY")
 polygon_base = "https://api.polygon.io"
+stlouis_fed_key = os.getenv("ST_LOUIS_FED_API_KEY")
 
 
 class ConsoleBSM(App):
@@ -43,7 +44,12 @@ class ConsoleBSM(App):
             ),
             Button(name="OHLC", id="ohlc", label="OHLC", classes="box bordered double"),
             Button(name="OPT", id="opt", label="OPT", classes="box bordered double"),
-            Button(name="CALC", id="calc", label="CALC", classes="box bordered double"),
+            Button(
+                name="TREAS",
+                id="treasury",
+                label="TREAS",
+                classes="box bordered double",
+            ),
             Button(
                 name="CLEAR",
                 id="clear",
@@ -71,7 +77,7 @@ class ConsoleBSM(App):
                 classes="box bordered centertext",
             ),
             Static(classes="sevenfold"),
-            RichLog(id="user-output", classes="box bordered full tall"),
+            RichLog(id="user-output", classes="box bordered full tall", wrap=True),
         )
         yield Footer()
 
@@ -101,9 +107,65 @@ class ConsoleBSM(App):
     async def handle_ohlc_click(self) -> None:
         await self.fetch_range_data()
 
+    @on(Button.Pressed, "#treasury")
+    async def handle_treasury_click(self) -> None:
+        await self.fetch_treasury_data()
+
     @on(Input.Submitted, "#ticker")
     async def handle_ticker_submitted(self) -> None:
         await self.fetch_ohlc_data()
+
+    async def fetch_treasury_data(self) -> float | None:
+        self.log_out("Fetching treasury data")
+        [start_date_str, end_date_str] = self.get_current_range()
+        unformatted_json = await self.make_rfr_call(
+            start_date_str=start_date_str, end_date_str=end_date_str
+        )
+        formatted_json = json.JSON.from_data(unformatted_json)
+        if formatted_json is None:
+            self.log_out("Something failed at the fed")
+            return
+        else:
+            self.log_json(formatted_json)
+            obsvs = unformatted_json["observations"]
+            if len(obsvs) > 0:
+                most_recent = obsvs[0]
+                mrv = most_recent["value"]
+                self.log_out(f"Most recent RFR is {mrv}")
+                return mrv
+        self.log_out("waking up")
+        # self.set_ohlc_disabled(False)
+
+    async def make_rfr_call(self, start_date_str: str, end_date_str: str) -> Any | None:
+        fred_url = "https://api.stlouisfed.org/fred/series/observations"
+        # endpoint = "v2/accounting/od/avg_interest_rates"
+        series_id = (
+            "DGS1MO"  # Series ID for the 1-month Treasury constant maturity rate
+        )
+        # Define the parameters for the API request
+        params = {
+            "series_id": series_id,
+            "api_key": stlouis_fed_key,
+            "observation_start": start_date_str,
+            "observation_end": end_date_str,
+            "file_type": "json",
+            "limit": 12,
+            "sort_order": "desc",  # Sort in descending order to get the latest data first
+        }
+        self.log_out("about to create the client")
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(fred_url, params=params)
+                response.raise_for_status()  # Raise an exception for HTTP errors
+                return response.json()
+            except httpx.RequestError as exc:
+                self.log_out(f"An error occurred while requesting {exc.request.url!r}.")
+            except httpx.HTTPStatusError as exc:
+                self.log_out(
+                    f"Error response {exc.response.reason_phrase} while requesting {exc.request.url!r}."
+                )
+            except Exception as exc:
+                self.log_out(f"An unexpected error occurred: {exc}")
 
     async def fetch_ohlc_data(self) -> None:
         if self.has_valid_fields():
@@ -133,12 +195,7 @@ class ConsoleBSM(App):
 
         self.set_ohlc_disabled(True)
         ticker = self.get_input_ticker()
-        end_date_str = self.get_input_date()
-        days_back = self.span_count
-        start_date_str = find_start_date_str(
-            end_date_str=end_date_str, days_back=days_back
-        )
-
+        [start_date_str, end_date_str] = self.get_current_range()
         unformatted_json = await self.make_range_call(
             ticker=ticker, start_date_str=start_date_str, end_date_str=end_date_str
         )
@@ -233,6 +290,14 @@ class ConsoleBSM(App):
     def get_input_ticker(self) -> str:
         ticker_input = self.query_one("#ticker", Input)
         return ticker_input.value
+
+    def get_current_range(self) -> Tuple[str, str]:
+        end_date_str = self.get_input_date()
+        days_back = self.span_count
+        start_date_str = find_start_date_str(
+            end_date_str=end_date_str, days_back=days_back
+        )
+        return [start_date_str, end_date_str]
 
     def has_valid_fields(self) -> bool:
         ticker = self.get_input_ticker()
