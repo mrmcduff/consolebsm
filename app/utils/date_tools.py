@@ -3,6 +3,7 @@ import pytz
 from typing import TypedDict
 
 FORMAT_STRINGS = ["%Y-%m-%d", "%m/%d/%Y", "%d %B, %Y", "%B %d, %Y"]
+OPTION_TICKER_FORMAT = "%y%m%d"
 # These are American equities (for now), so all dates are in New York time.
 TIME_ZONE = "America/New_York"
 
@@ -31,6 +32,10 @@ def parse_date(possible_date: str) -> Date_Response:
 
 def format_date(query_date: datetime) -> str:
     return datetime.strftime(query_date, FORMAT_STRINGS[0])
+
+
+def format_option_ticker_date(input_date: datetime) -> str:
+    return datetime.strftime(input_date, OPTION_TICKER_FORMAT)
 
 
 def default_date_str(default_date: datetime = datetime.now()) -> str:
