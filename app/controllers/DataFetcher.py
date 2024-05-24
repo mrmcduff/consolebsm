@@ -2,6 +2,8 @@ import httpx
 import os
 from typing import Any
 from .OutputLogger import OutputLogger
+from app.utils.model_tools import range_ohlc_from_json
+from app.models.RangeOhlc import RangeOhlc
 
 polygon_key = os.getenv("POLYGON_IO_API_KEY")
 polygon_base = "https://api.polygon.io"
@@ -18,12 +20,16 @@ class DataFetcher:
         start_date_str: str,
         end_date_str: str,
         logger: OutputLogger,
-    ):
+    ) -> RangeOhlc | None:
         unformatted_json = await self.make_range_call(
             ticker=ticker, start_date_str=start_date_str, end_date_str=end_date_str
         )
-        logger.log_text('Found result')
-        return unformatted_json
+        logger.log_text("Found result")
+        parsed_data = range_ohlc_from_json(unformatted_json)
+        if parsed_data is None:
+            logger.log_error(f"Could not interpret result {unformatted_json}")
+            return None
+        return parsed_data
 
     async def make_range_call(
         self,

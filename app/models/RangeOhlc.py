@@ -6,7 +6,7 @@ from typing import List
 class OhlcResult:
     c: float  # close
     h: float  # high
-    l: float  #noqa E741
+    l: float  # noqa E741
     o: float  # open
     t: float  # millisecond timestamp for end of the window
     v: float  # trading volume during the time period
