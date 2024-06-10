@@ -6,6 +6,8 @@ from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.containers import Grid
 from textual.widgets import Button, Footer, Header, Input, RichLog, Static
+from controllers.DataFetcher import DataFetcher
+from controllers.OutputLogger import OutputLogger
 from utils.date_tools import (
     default_date_str,
     parse_date,
@@ -31,9 +33,28 @@ class ConsoleBSM(App):
     BINDINGS = [("d", "toggle_dark", "Toggle dark mode"), ("x", "exit_app", "Exit App")]
 
     span_count: reactive[int] = reactive(1)
+    output_controller: OutputLogger
+    data_fetcher: DataFetcher
+    output_log_view: RichLog
+
+    def __init__(self) -> None:
+        super().__init__()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
+        # here, do self.richlog = ...
+        # then yield self.richlog
+        self.output_log_view = RichLog(
+            id="user-output", classes="box bordered full tall", wrap=True
+        )
+        self.output_controller = OutputLogger(
+            text_log=self.output_log_view,
+            json_log=self.output_log_view,
+            error_log=self.output_log_view,
+        )
+        self.data_fetcher = DataFetcher(self.output_controller)
+        # For now, just use the same output view for all logs.
+
         yield Header()
         yield Grid(
             Input(
@@ -77,7 +98,7 @@ class ConsoleBSM(App):
                 classes="box bordered centertext",
             ),
             Static(classes="sevenfold"),
-            RichLog(id="user-output", classes="box bordered full tall", wrap=True),
+            self.output_log_view,
         )
         yield Footer()
 
@@ -116,24 +137,24 @@ class ConsoleBSM(App):
         await self.fetch_ohlc_data()
 
     async def fetch_treasury_data(self) -> float | None:
-        self.log_out("Fetching treasury data")
+        self.output_controller.log_text("Fetching treasury data")
         [start_date_str, end_date_str] = self.get_current_range()
         unformatted_json = await self.make_rfr_call(
             start_date_str=start_date_str, end_date_str=end_date_str
         )
         formatted_json = json.JSON.from_data(unformatted_json)
         if formatted_json is None:
-            self.log_out("Something failed at the fed")
+            self.output_controller.log_error("Something failed at the fed")
             return
         else:
-            self.log_json(formatted_json)
+            self.output_controller.log_json(formatted_json)
             obsvs = unformatted_json["observations"]
             if len(obsvs) > 0:
                 most_recent = obsvs[0]
                 mrv = most_recent["value"]
-                self.log_out(f"Most recent RFR is {mrv}")
+                self.output_controller.log_text(f"Most recent RFR is {mrv}")
                 return mrv
-        self.log_out("waking up")
+        self.output_controller.log_text("waking up")
         # self.set_ohlc_disabled(False)
 
     async def make_rfr_call(self, start_date_str: str, end_date_str: str) -> Any | None:
@@ -152,26 +173,28 @@ class ConsoleBSM(App):
             "limit": 12,
             "sort_order": "desc",  # Sort in descending order to get the latest data first
         }
-        self.log_out("about to create the client")
+        self.output_controller.log_text("about to create the client")
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(fred_url, params=params)
                 response.raise_for_status()  # Raise an exception for HTTP errors
                 return response.json()
             except httpx.RequestError as exc:
-                self.log_out(f"An error occurred while requesting {exc.request.url!r}.")
+                self.output_controller.log_error(
+                    f"An error occurred while requesting {exc.request.url!r}."
+                )
             except httpx.HTTPStatusError as exc:
-                self.log_out(
+                self.output_controller.log_error(
                     f"Error response {exc.response.reason_phrase} while requesting {exc.request.url!r}."
                 )
             except Exception as exc:
-                self.log_out(f"An unexpected error occurred: {exc}")
+                self.output_controller.log_error(f"An unexpected error occurred: {exc}")
 
     async def fetch_ohlc_data(self) -> None:
         if self.has_valid_fields():
-            self.log_out("Fields are valid. I am prepared to fetch")
+            self.output_controller.log_text("Fields are valid. I am prepared to fetch")
         else:
-            self.log_out("Fields are not valid. Fetcher out.")
+            self.output_controller.log_text("Fields are not valid. Fetcher out.")
             return
 
         self.set_ohlc_disabled(True)
@@ -188,23 +211,23 @@ class ConsoleBSM(App):
 
     async def fetch_range_data(self) -> None:
         if self.has_valid_fields():
-            self.log_out("Fields valid. Fetching ranged data")
+            self.output_controller.log_text("Fields valid. Fetching ranged data")
         else:
-            self.log_out("Invalid fields. Stopping")
+            self.output_controller.log_text("Invalid fields. Stopping")
             return
 
         self.set_ohlc_disabled(True)
         ticker = self.get_input_ticker()
         [start_date_str, end_date_str] = self.get_current_range()
-        unformatted_json = await self.make_range_call(
+        unformatted_json = await self.data_fetcher.make_range_call(
             ticker=ticker, start_date_str=start_date_str, end_date_str=end_date_str
         )
         formatted_json = json.JSON.from_data(unformatted_json)
         if formatted_json is None:
-            self.log_out("Something failed")
+            self.output_controller.log_error("Something failed")
         else:
             # self.log_json(formatted_json)
-            self.log_out("Calculating...")
+            self.output_controller.log_text("Calculating...")
             closes = get_closes(unformatted_json["results"])
             dates = [
                 *map(
@@ -216,40 +239,20 @@ class ConsoleBSM(App):
             [sigma_hat_h, error_h] = calculate_daily_volatility(
                 unformatted_json["results"], key="h"
             )
-            self.log_out(f"Data for {ticker.upper()}")
-            self.log_out(
+            self.output_controller.log_text(f"Data for {ticker.upper()}")
+            self.output_controller.log_text(
                 f"Volatility for {len(closes)}-day period ending {end_date_str} is {sigma_hat_c}"
             )
-            self.log_out(
+            self.output_controller.log_text(
                 f"Volatility of highs for {len(closes)}-day period ending {end_date_str} is {sigma_hat_h}"
             )
-            self.log_out(f"Error for range is {error_c}")
-            self.log_out(f"Error for high range is {error_h}")
-            self.log_json(str(closes))
-            self.log_json(str(dates))
+            self.output_controller.log_text(f"Error for range is {error_c}")
+            self.output_controller.log_text(f"Error for high range is {error_h}")
+            self.output_controller.log_json(str(closes))
+            self.output_controller.log_json(str(dates))
 
-        self.log_out("waking up")
+        self.output_controller.log_text("waking up")
         self.set_ohlc_disabled(False)
-
-    async def make_range_call(
-        self, ticker: str, start_date_str: str, end_date_str: str
-    ) -> Any | None:
-        url = f"https://api.polygon.io/v2/aggs/ticker/{ticker.upper()}/range/1/day/{start_date_str}/{end_date_str}?adjusted=true&sort=asc"
-        headers = {"Authorization": f"Bearer {polygon_key}"}
-        self.log_out("about to create the client")
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, headers=headers)
-                response.raise_for_status()  # Raise an exception for HTTP errors
-                return response.json()
-            except httpx.RequestError as exc:
-                self.log_out(f"An error occurred while requesting {exc.request.url!r}.")
-            except httpx.HTTPStatusError as exc:
-                self.log_out(
-                    f"Error response {exc.response.reason_phrase} while requesting {exc.request.url!r}."
-                )
-            except Exception as exc:
-                self.log_out(f"An unexpected error occurred: {exc}")
 
     async def make_api_call(self, ticker: str, datestr: str) -> Any | None:
         url = f"https://api.polygon.io/v1/open-close/{ticker.upper()}/{datestr}?adjusted=true"
