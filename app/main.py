@@ -18,6 +18,7 @@ from utils.date_tools import (
 from dotenv import load_dotenv
 from rich import json
 from utils.format_tools import get_closes
+from utils.model_tools import get_range_values
 from utils.volatility_tools import calculate_volatility, calculate_daily_volatility
 
 load_dotenv()
@@ -126,7 +127,7 @@ class ConsoleBSM(App):
 
     @on(Button.Pressed, "#ohlc")
     async def handle_ohlc_click(self) -> None:
-        await self.fetch_range_data()
+        await self.get_ohlc_range_data()
 
     @on(Button.Pressed, "#treasury")
     async def handle_treasury_click(self) -> None:
@@ -134,7 +135,7 @@ class ConsoleBSM(App):
 
     @on(Input.Submitted, "#ticker")
     async def handle_ticker_submitted(self) -> None:
-        await self.fetch_ohlc_data()
+        await self.get_ohlc_range_data()
 
     async def fetch_treasury_data(self) -> float | None:
         self.output_controller.log_text("Fetching treasury data")
@@ -190,89 +191,34 @@ class ConsoleBSM(App):
             except Exception as exc:
                 self.output_controller.log_error(f"An unexpected error occurred: {exc}")
 
-    async def fetch_ohlc_data(self) -> None:
-        if self.has_valid_fields():
-            self.output_controller.log_text("Fields are valid. I am prepared to fetch")
-        else:
-            self.output_controller.log_text("Fields are not valid. Fetcher out.")
-            return
-
-        self.set_ohlc_disabled(True)
-        ticker = self.get_input_ticker()
-        datestr = self.get_input_date()
-
-        formatted_json = await self.make_api_call(ticker=ticker, datestr=datestr)
-        if formatted_json is None:
-            self.log_out("Something failed")
-        else:
-            self.log_json(formatted_json)
-        self.log_out("waking up")
-        self.set_ohlc_disabled(False)
-
-    async def fetch_range_data(self) -> None:
+    async def get_ohlc_range_data(self) -> None:
         if self.has_valid_fields():
             self.output_controller.log_text("Fields valid. Fetching ranged data")
         else:
             self.output_controller.log_text("Invalid fields. Stopping")
             return
-
-        self.set_ohlc_disabled(True)
         ticker = self.get_input_ticker()
         [start_date_str, end_date_str] = self.get_current_range()
-        unformatted_json = await self.data_fetcher.make_range_call(
+        range_data = await self.data_fetcher.fetch_range_ohlc_data(
             ticker=ticker, start_date_str=start_date_str, end_date_str=end_date_str
         )
-        formatted_json = json.JSON.from_data(unformatted_json)
-        if formatted_json is None:
-            self.output_controller.log_error("Something failed")
+        if range_data is None:
+            self.output_controller.log_error("Error getting OHLC data")
         else:
-            # self.log_json(formatted_json)
-            self.output_controller.log_text("Calculating...")
-            closes = get_closes(unformatted_json["results"])
-            dates = [
-                *map(
-                    lambda uj: format_date(from_millis(uj["t"])),
-                    unformatted_json["results"],
-                )
-            ]
+            closes = get_range_values(rangeOhlc=range_data, key="c")
+            raw_dates = get_range_values(rangeOhlc=range_data, key="t")
+            dates = [*map(lambda t: format_date(from_millis(t)), raw_dates)]
             [sigma_hat_c, error_c] = calculate_volatility(closes)
-            [sigma_hat_h, error_h] = calculate_daily_volatility(
-                unformatted_json["results"], key="h"
-            )
             self.output_controller.log_text(f"Data for {ticker.upper()}")
             self.output_controller.log_text(
                 f"Volatility for {len(closes)}-day period ending {end_date_str} is {sigma_hat_c}"
             )
-            self.output_controller.log_text(
-                f"Volatility of highs for {len(closes)}-day period ending {end_date_str} is {sigma_hat_h}"
-            )
             self.output_controller.log_text(f"Error for range is {error_c}")
-            self.output_controller.log_text(f"Error for high range is {error_h}")
             self.output_controller.log_json(str(closes))
             self.output_controller.log_json(str(dates))
 
         self.output_controller.log_text("waking up")
         self.set_ohlc_disabled(False)
-
-    async def make_api_call(self, ticker: str, datestr: str) -> Any | None:
-        url = f"https://api.polygon.io/v1/open-close/{ticker.upper()}/{datestr}?adjusted=true"
-        headers = {"Authorization": f"Bearer {polygon_key}"}
-        self.log_out("about to create the client")
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, headers=headers)
-                response.raise_for_status()  # Raise an exception for HTTP errors
-                self.log_out("Managed to get a positive response from the server")
-                formatted = json.JSON.from_data(response.json())
-                return formatted
-            except httpx.RequestError as exc:
-                self.log_out(f"An error occurred while requesting {exc.request.url!r}.")
-            except httpx.HTTPStatusError as exc:
-                self.log_out(
-                    f"Error response {exc.response.reason_phrase} while requesting {exc.request.url!r}."
-                )
-            except Exception as exc:
-                self.log_out(f"An unexpected error occurred: {exc}")
 
     def get_input_date(self) -> str | None:
         date_input = self.query_one("#date-input", Input)

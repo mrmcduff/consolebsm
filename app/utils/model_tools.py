@@ -1,6 +1,6 @@
 from app.models.RangeOhlc import RangeOhlc, OhlcResult
-from typing import Any
-
+from typing import Any, List, Literal, Tuple, get_args
+from dataclasses import asdict
 
 EXPECTED_KEYS = [
     "adjusted",
@@ -11,7 +11,13 @@ EXPECTED_KEYS = [
     "ticker",
     "request_id",
 ]
-EXPECTED_RESULT_KEYS = ["o", "h", "l", "c", "t", "v"]
+
+literal_keys = Literal["o", "h", "l", "c", "t", "v"]
+EXPECTED_RESULT_KEYS: Tuple[literal_keys, ...] = get_args(literal_keys)
+
+
+def get_range_values(rangeOhlc: RangeOhlc, key: literal_keys) -> List[float]:
+    return [*map(lambda ob: asdict(ob)[key], rangeOhlc.results)]
 
 
 def range_ohlc_from_json(data: Any) -> RangeOhlc | None:
